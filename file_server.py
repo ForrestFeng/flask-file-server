@@ -180,8 +180,35 @@ path_view = PathView.as_view('path_view')
 app.add_url_rule('/', view_func=path_view)
 app.add_url_rule('/<path:p>', view_func=path_view )
 
+
+
+# Part of socket io
+from flask_socketio import SocketIO, emit
+async_mode = 'eventlet'
+socketio = None
+socketio = SocketIO(app, async_mode=async_mode)    
+app.config['SECRET_KEY'] = 'secret!'
+namespace = '/NSloganalyze'
+
+
+@socketio.on('connect', namespace=namespace)
+def client_connect():
+    emit('status_report_event',  {'url': 'x/y/z', 'status':0})
+
+
+@socketio.on('status_request_event', namespace=namespace)
+def status_request_event(message):
+    emit('status_report_event',
+         {'url': 'a/b/c', 'status':100},
+         broadcast=True)
+
+
 # To make apache2 happy
 application=app
 
 if __name__ == "__main__":
-    app.run('0.0.0.0', 9000, threaded=True, debug=True)
+    # app.run does not support socketio 
+    # see https://stackoverflow.com/questions/34735206/using-eventlet-to-manage-socketio-in-flask
+    # to let socket io run properly we need run it with socketio.run(app)
+    # app.run('0.0.0.0', 9000, threaded=True, debug=True)
+    socketio.run(app, host='localhost', port=9000, debug=True)
