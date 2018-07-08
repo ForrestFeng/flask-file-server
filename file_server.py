@@ -180,4 +180,8 @@ path_view = PathView.as_view('path_view')
 app.add_url_rule('/', view_func=path_view)
 app.add_url_rule('/<path:p>', view_func=path_view )
 
-app.run('0.0.0.0', 9000, threaded=True, debug=True)
+# To make apache2 happy
+application=app
+
+if __name__ == "__main__":
+    app.run('0.0.0.0', 9000, threaded=True, debug=True)
