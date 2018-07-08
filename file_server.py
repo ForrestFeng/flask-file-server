@@ -138,7 +138,8 @@ class PathView(MethodView):
             page = render_template('index.html', path=p, contents=contents, total=total, 
                 reportfolders=reportfolders,
                 xrslogfolders=xrslogfolders,
-                hide_dotfile=hide_dotfile)
+                hide_dotfile=hide_dotfile,
+                async_mode=socketio.async_mode)
             res = make_response(page, 200)
             res.set_cookie('hide-dotfile', hide_dotfile, max_age=16070400)
         elif os.path.isfile(path):
@@ -202,7 +203,11 @@ def status_request_event(message):
          {'url': 'a/b/c', 'status':100},
          broadcast=True)
 
+@socketio.on('my_ping', namespace=namespace)
+def ping_pong():
+    emit('my_pong')
 
+    
 # To make apache2 happy
 application=app
 
