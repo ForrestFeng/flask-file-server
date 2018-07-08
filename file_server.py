@@ -8,10 +8,23 @@ import re
 import stat
 import json
 import mimetypes
+import pathlib
 
 app = Flask(__name__, static_url_path='/assets', static_folder='assets')
 root = os.path.expanduser('~')
-
+# Used to indentify folders that contain trace reports file.
+# Such a folder a href will link to hostname/&/path/to/reprotfolder 
+# which will be served by apache2 for better performance.
+# Such a folder must contains index.html file for the report.
+# Users can just click the report folder to see the report :)
+# Folder name is in lower case to easy the judge in index.html
+reportfolders = ['tracereport']
+# Used to indentify folders that contains xrs trace log file. 
+# Such a folder contains one or mall log files to be analyzed.
+# Usaully there will be a "Analyze" button on the right of the folder row.
+# User click this button to triger log analyze
+# Folder name is in lower case to easy the judge in index.html
+xrslogfolders = ['tracelog']
 ignored = ['.bzr', '$RECYCLE.BIN', '.DAV', '.DS_Store', '.git', '.hg', '.htaccess', '.htpasswd', '.Spotlight-V100', '.svn', '__MACOSX', 'ehthumbs.db', 'robots.txt', 'Thumbs.db', 'thumbs.tps']
 datatypes = {'audio': 'm4a,mp3,oga,ogg,webma,wav', 'archive': '7z,zip,rar,gz,tar', 'image': 'gif,ico,jpe,jpeg,jpg,png,svg,webp', 'pdf': 'pdf', 'quicktime': '3g2,3gp,3gp2,3gpp,mov,qt', 'source': 'atom,bat,bash,c,cmd,coffee,css,hml,js,json,java,less,markdown,md,php,pl,py,rb,rss,sass,scpt,swift,scss,sh,xml,yml,plist', 'text': 'txt', 'video': 'mp4,m4v,ogv,webm', 'website': 'htm,html,mhtm,mhtml,xhtm,xhtml'}
 icontypes = {'fa-music': 'm4a,mp3,oga,ogg,webma,wav', 'fa-archive': '7z,zip,rar,gz,tar', 'fa-picture-o': 'gif,ico,jpe,jpeg,jpg,png,svg,webp', 'fa-file-text': 'pdf', 'fa-film': '3g2,3gp,3gp2,3gpp,mov,qt', 'fa-code': 'atom,plist,bat,bash,c,cmd,coffee,css,hml,js,json,java,less,markdown,md,php,pl,py,rb,rss,sass,scpt,swift,scss,sh,xml,yml', 'fa-file-text-o': 'txt', 'fa-film': 'mp4,m4v,ogv,webm', 'fa-globe': 'htm,html,mhtm,mhtml,xhtm,xhtml'}
@@ -113,6 +126,7 @@ class PathView(MethodView):
                 stat_res = os.stat(filepath)
                 info = {}
                 info['name'] = filename
+                info['fullname'] = pathlib.Path(filepath).relative_to(root).as_posix()
                 info['mtime'] = stat_res.st_mtime
                 ft = get_type(stat_res.st_mode)
                 info['type'] = ft
@@ -121,11 +135,16 @@ class PathView(MethodView):
                 info['size'] = sz
                 total['size'] += sz
                 contents.append(info)
-            page = render_template('index.html', path=p, contents=contents, total=total, hide_dotfile=hide_dotfile)
+            page = render_template('index.html', path=p, contents=contents, total=total, 
+                reportfolders=reportfolders,
+                xrslogfolders=xrslogfolders,
+                hide_dotfile=hide_dotfile)
             res = make_response(page, 200)
             res.set_cookie('hide-dotfile', hide_dotfile, max_age=16070400)
         elif os.path.isfile(path):
-            if 'Range' in request.headers:
+            if path.endswith('.html'):
+                pass
+            elif 'Range' in request.headers:
                 start, end = get_range(request)
                 res = partial_response(path, start, end)
             else:
@@ -159,6 +178,6 @@ class PathView(MethodView):
 
 path_view = PathView.as_view('path_view')
 app.add_url_rule('/', view_func=path_view)
-app.add_url_rule('/<path:p>', view_func=path_view)
+app.add_url_rule('/<path:p>', view_func=path_view )
 
-app.run('0.0.0.0', 8000, threaded=True, debug=False)
+app.run('0.0.0.0', 9000, threaded=True, debug=True)
