@@ -184,7 +184,7 @@ app.add_url_rule('/<path:p>', view_func=path_view )
 
 # Part of socket io
 from flask_socketio import SocketIO, emit
-async_mode = 'eventlet'
+async_mode = None
 socketio = None
 socketio = SocketIO(app, async_mode=async_mode)    
 app.config['SECRET_KEY'] = 'secret!'
