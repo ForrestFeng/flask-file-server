@@ -12,7 +12,7 @@ import pathlib
 
 DEBUG = False 
 app = Flask(__name__, static_url_path='/assets', static_folder='assets')
-root = '/var/www/xrslogs/' #os.path.expanduser('~')
+root = os.path.expanduser('~')
 # Used to indentify folders that contain trace reports file.
 # Such a folder a href will link to hostname/&/path/to/reprotfolder 
 # which will be served by apache2 for better performance.
@@ -217,7 +217,7 @@ if __name__ == "__main__":
     # app.run does not support socketio 
     # see https://stackoverflow.com/questions/34735206/using-eventlet-to-manage-socketio-in-flask
     # to let socket io run properly we need run it with socketio.run(app)
-    # app.run('0.0.0.0', 9000, threaded=True, debug=True)
-    socketio.run(app, host='0.0.0.0', port=9000, debug=True)
+    # app.run('0.0.0.0', 8000, threaded=True, debug=True)
+    socketio.run(app, host='0.0.0.0', port=8000, debug=True)
     # run with uwsgi 
     ' uwsgi --wsgi-file file_server.py --gevent 1000 --http-websockets --master --callable app  --http :9000  --static-map /\&=/var/www/xrslogs/  --uid xrslog --gid xrslog  '
