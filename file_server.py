@@ -10,6 +10,7 @@ import json
 import mimetypes
 import pathlib
 
+DEBUG = False 
 app = Flask(__name__, static_url_path='/assets', static_folder='assets')
 root = '/var/www/xrslogs/' #os.path.expanduser('~')
 # Used to indentify folders that contain trace reports file.
@@ -136,6 +137,7 @@ class PathView(MethodView):
                 total['size'] += sz
                 contents.append(info)
             page = render_template('index.html', path=p, contents=contents, total=total, 
+                DEBUG=DEBUG,
                 reportfolders=reportfolders,
                 xrslogfolders=xrslogfolders,
                 hide_dotfile=hide_dotfile,
