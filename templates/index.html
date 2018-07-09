@@ -54,7 +54,7 @@
             var start_time;
             window.setInterval(function() {
                 start_time = (new Date).getTime();
-                socket.emit('my_ping');
+                // socket.emit('my_ping');
             }, 1000);
 
             // Handler for the "pong" message. When the pong is received, the
@@ -127,7 +127,7 @@
           {% for entry in contents if entry.type == 'dir' %}
           <tr>
               <td class="text-xs-left " data-sort-value="dir-{{entry.name | lower}}"><i class="fa fa-fw fa-folder " aria-hidden="true"></i>&nbsp;{% if entry.name.lower() in reportfolders %}
-<a href="{{'/&'+ url_for('path_view', p=entry.fullname)}}/" ><strong>{{entry.name}}</strong></a>{% else %}<a href="{{entry.name}}/" ><strong>{{entry.name}}</strong></a>{% endif %}
+<a href="{{'/&'+ url_for('path_view', p=entry.fullname)}}/index.html" ><strong>{{entry.name}}</strong></a>{% else %}<a href="{{entry.name}}/" ><strong>{{entry.name}}</strong></a>{% endif %}
               </td>
             <td class="text-xs-right " data-sort-value="-1">&mdash;</td>
             <td class="text-xs-right " data-sort-value="{{entry.mtime}}" title="{{entry.mtime | time_fmt}}">{{entry.mtime | humanize}}</td>
