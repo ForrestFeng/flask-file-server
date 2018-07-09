@@ -69,7 +69,13 @@
                     sum += ping_pong_times[i];
                 $('#ping-pong').text(Math.round(10 * sum / ping_pong_times.length) / 10);
             });
-
+	    // Hander of analyze button click
+	 $('#analyze-btn').click(function() {
+		{% if DEBUG %}
+                $('#log').append('<br>' + $('<div/>').text('Analyze button clicked').html());
+		{% endif %}
+		socket.emit('analyze_request_event', {url:$('#analyze-btn').attr('url')});
+	    });
         });
     </script>
 </head>
@@ -134,7 +140,7 @@
             <td class="text-xs-right " data-sort-value="{{entry.mtime}}" title="{{entry.mtime | time_fmt}}">{{entry.mtime | humanize}}</td>
             <td class="text-xs-right " title="Action/Status">
                {% if entry.name.lower() in xrslogfolders %}
-               <button type="button" id="analyze-log" class="btn" >Analyze</button>
+               <button type="button" id="analyze-btn" class="btn" url="{{url_for('path_view', p=entry.fullname)}}">Analyze</button>
                {% endif %}
             </td>
           </tr>

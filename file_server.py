@@ -10,7 +10,7 @@ import json
 import mimetypes
 import pathlib
 
-DEBUG = False 
+DEBUG = True
 app = Flask(__name__, static_url_path='/assets', static_folder='assets')
 root = os.path.expanduser('~')
 # Used to indentify folders that contain trace reports file.
@@ -42,7 +42,7 @@ def time_desc(timestamp):
 
 @app.template_filter('data_fmt')
 def data_fmt(filename):
-    t = 'unknown'
+    t = 'unkown'
     for type, exts in datatypes.items():
         if filename.split('.')[-1] in exts:
             t = type
@@ -184,8 +184,18 @@ app.add_url_rule('/', view_func=path_view)
 app.add_url_rule('/<path:p>', view_func=path_view )
 
 
+# Part of DB 
+
 
 # Part of socket io
+
+# The only entry to start to analyze log file
+def analyze(url):
+    # Add this job if it is not in DB
+    # Otherwise return the job status in DB 
+    return 0
+
+
 from flask_socketio import SocketIO, emit
 async_mode = 'gevent'
 socketio = None
@@ -203,6 +213,15 @@ def client_connect():
 def status_request_event(message):
     emit('status_report_event',
          {'url': 'a/b/c', 'status':100},
+         broadcast=True)
+
+@socketio.on('analyze_request_event', namespace=namespace)
+def analyze_request_event(message):
+    # logic to check the requested url status
+    url = message['url']
+    status = analyze(url)
+    emit('status_report_event',
+         {'url':url, 'status':status},
          broadcast=True)
 
 @socketio.on('my_ping', namespace=namespace)
