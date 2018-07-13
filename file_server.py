@@ -236,7 +236,8 @@ if __name__ == "__main__":
     # app.run does not support socketio 
     # see https://stackoverflow.com/questions/34735206/using-eventlet-to-manage-socketio-in-flask
     # to let socket io run properly we need run it with socketio.run(app)
-    # app.run('0.0.0.0', 8000, threaded=True, debug=True)
-    socketio.run(app, host='0.0.0.0', port=8000, debug=True)
+    #app.run('0.0.0.0', 8000, threaded=True, debug=True)
+    socketio.run(app, host='0.0.0.0', port=8000, debug=False)
     # run with uwsgi 
-    ' uwsgi --wsgi-file file_server.py --gevent 1000 --http-websockets --master --callable app  --http :9000  --static-map /\&=/var/www/xrslogs/  --uid xrslog --gid xrslog  '
+    # uwsgi --wsgi-file file_server.py --gevent 1000 --http-websockets --master --callable app  --http :9000  --static-map /\&=/var/www/xrslogs/  --uid xrslog --gid xrslog
+
