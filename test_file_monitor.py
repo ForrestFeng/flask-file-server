@@ -8,7 +8,7 @@ import shutil
 
 def test_by_create_TraceLog_and_create_request_file_under_it():
     # our logs should goes to this folder
-    log_file_rootdir='/home/xrslog/DirectViewLogs'
+    log_file_rootdir='/home/xrslog/Logs'
     assert os.path.exists(log_file_rootdir)
     os.chdir(log_file_rootdir)
     if os.path.exists('5.7Evo'): 

@@ -378,7 +378,7 @@ if __name__ == '__main__':
     external_process = ["python3", '/home/logadmin/flask-file-server/sim_external_script.py'] 
     #!!!  defalut_logging_rootdir MUST NOT a sub folder of log_file_rootdir
     defalut_logging_rootdir='/home/xrslog'
-    log_file_rootdir='/home/xrslog/DirectViewLogs'
+    log_file_rootdir='/home/xrslog/Logs'
     
     if not os.path.exists(log_file_rootdir):
         os.makedirs(log_file_rootdir)

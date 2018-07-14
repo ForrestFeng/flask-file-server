@@ -12,7 +12,7 @@ import pathlib
 
 DEBUG = True
 app = Flask(__name__, static_url_path='/assets', static_folder='assets')
-root = os.path.expanduser('~')
+root = os.path.join(os.path.expanduser('~'), 'Logs')
 # Used to indentify folders that contain trace reports file.
 # Such a folder a href will link to hostname/&/path/to/reprotfolder 
 # which will be served by apache2 for better performance.
@@ -197,7 +197,7 @@ def analyze(url):
 
 
 from flask_socketio import SocketIO, emit
-async_mode = 'gevent'
+async_mode = None
 socketio = None
 socketio = SocketIO(app, async_mode=async_mode)    
 app.config['SECRET_KEY'] = 'secret!'
@@ -236,8 +236,14 @@ if __name__ == "__main__":
     # app.run does not support socketio 
     # see https://stackoverflow.com/questions/34735206/using-eventlet-to-manage-socketio-in-flask
     # to let socket io run properly we need run it with socketio.run(app)
-    #app.run('0.0.0.0', 8000, threaded=True, debug=True)
-    socketio.run(app, host='0.0.0.0', port=8000, debug=False)
+    # 5000 is falsk defalut port.
+    #app.run('0.0.0.0', 5000, threaded=True, debug=True) 
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+
     # run with uwsgi 
-    # uwsgi --wsgi-file file_server.py --gevent 1000 --http-websockets --master --callable app  --http :9000  --static-map /\&=/var/www/xrslogs/  --uid xrslog --gid xrslog
+    # uwsgi requires gevent is installed. but when it is installed the 'socketio.run(app, host='0.0.0.0', port=5000, debug=True)'
+    # has no output. The server hangs before the host and port is properly bound.
+    # and you will not be able to browser the page. This is a gevent related issue, not the code issue.
+    # Uninstall the gevent with sudo pip3 uninstall gevent and run this program again, it works without any error.
+    # uwsgi --wsgi-file file_server.py --gevent 1000 --http-websockets --master --callable app  --http :5000  --static-map /\&=/var/www/xrslogs/  --uid xrslog --gid xrslog
 
