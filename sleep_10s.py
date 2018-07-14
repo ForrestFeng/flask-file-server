@@ -1,13 +1,14 @@
 import sys
 import time
 
-logging.info(sys.argv)
+
+print("Sleep_10.py argv", sys.argv)
 
 thisfile = sys.argv[0]
 statpath = sys.argv[1]
 
-for progress in [2, 30, 60, 90 99]:
-	time.sleep(10)
+for progress in [2, 30]:
+	time.sleep(2)
 	with open(statpath, 'w') as f:
 		f.write(str(progress))
 

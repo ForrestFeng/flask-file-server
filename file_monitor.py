@@ -10,6 +10,7 @@ import yaml
 import threading
 from datetime import datetime
 import pathlib
+import subprocess
 
 
 TEST = True
@@ -73,17 +74,12 @@ def setup_logging(
         print('else')
         logging.basicConfig(level=default_level)
 
-class WorkerRunnerThread():
-    EXTERNAL_PROCESS = ["python3", '/home/logadmin/flask-file-server/sleep_10s.py']
-
+class WorkerRunnerThread():    
     def __init__(self, statpath:str, rearctor, simulate=False):
         self.statpath = statpath
         self.simulate = simulate
         self.reactor = reactor
-
-    def set_stat(self, value:int):
-        with open(self.statpath, 'w') as f:
-            f.write(str(value))
+        self.EXTERNAL_PROCESS = ["python3", '/home/logadmin/flask-file-server/sleep_10s.py']
 
     def on_external_process_exit(self, args=None):
         # return inner def
@@ -93,12 +89,12 @@ class WorkerRunnerThread():
             if proc.returncode == 0:
                 self.reactor.set_stat(self.statpath, 100)
             else:
-                self.set_stat(exitcode)                
+                sself.reactor.set_stat(self.statpath, exitcode)                
             # remove job entry from processing queue
             self.reactor.move_job_entry_from_processing_to_finished(self.statpath, exitcode)
         return update_job_in_db
 
-    def popen_and_call(on_exit, popenArgs, **popenKWArgs):
+    def popen_and_call(self, on_exit, popenArgs, **popenKWArgs):
         """
         Runs a subprocess.Popen, and then calls the function on_exit when the
         subprocess completes.
@@ -121,15 +117,9 @@ class WorkerRunnerThread():
 
         return thread 
 
-    def run(self):        
-        if TEST:
-            # simulate analyze process 
-            for i in [2,  30, 60, 90, 99]:
-                time.sleep(2)
-                self.reactor.set_stat(self.statpath, i)
-        else:
-            ARGS = [self.statpath]
-            popen_and_call(self.on_external_process_exit(),  self.EXTERNAL_PROCESS + ARGS)
+    def run(self):       
+        ARGS = [self.statpath]
+        self.popen_and_call(self.on_external_process_exit(),  self.EXTERNAL_PROCESS + ARGS)
 
 class FakeSocketio():
     def emit(self, *args):
@@ -174,19 +164,34 @@ class Reactor():
             f.write(str(value))
 
     def move_job_entry_from_processing_to_finished(self, statpath:str, exitcode:int):
+        logging.info('Move job to finished queue %s' % statpath)   
+        lns = []       
         with open(self.qfile_processing) as f:
             wlogdir = self.as_web_logdir(statpath)
             lns = [ln.strip() for ln in f.readlines() if ln != '\n']
 
-            for ln in lns:
-                jobentry = eval(ln)
-                if jobentry['logdir'] != wlogdir:
-                    jobentry['finishtime'] = str(datetime.now())
-                    jobentry['exitcode'] = str(returncode)
-                    mewln = str(jobentry)
+        # regenerate processing job
+        plns = []
+        for ln in lns:
+            jobentry = eval(ln)
+            if jobentry['logdir'] == wlogdir:
+                jobentry['finishtime'] = str(datetime.now())
+                jobentry['exitcode'] = str(exitcode)
+                mewln = str(jobentry)
+                if not os.path.exists(self.qfile_finished):
+                    with open(self.qfile_finished, 'w') as ff:
+                        ff.write(mewln+'\n')
+                else:                      
                     with open(self.qfile_finished, 'a') as ff:
-                        ff.write('\n'.join(mewln))
-                    break
+                        ff.write('\n'.join(mewln)+'\n')
+            else:
+                plns.append(ln)
+        # update processing queue
+        logging.debug("plns data %s; lns data %s" % (plns, lns))
+        if len(plns) < len(lns):
+            with open(self.qfile_processing, 'w') as f:
+                f.write('\n'.join(plns))
+
 
     def broadcast_stat(self, logdir, stat):
         #broadcast to all client via websocket
@@ -194,10 +199,22 @@ class Reactor():
         self.socketio.emit('status_report_event',  {'logdir': logdir, 'stat':stat}, broadcast)
 
     def append_to_waiting_queue(self, statpath):
-        jobentry = self.job_entry(self.as_web_logdir(statpath), ["All"], str(datetime.now()) )
-        with open(self.qfile_waiting, 'a') as f:
-            logging.info("Append job entry to waiting queue %s" % str(jobentry))
-            f.write('\n'+str(jobentry))
+        logdir = self.as_web_logdir(statpath)
+        jobentry = self.job_entry(logdir, ["All"], str(datetime.now()) )        
+        if not os.path.exists(self.qfile_waiting): 
+            # append directly if no file exist
+            with open(self.qfile_waiting, 'w') as f:
+                logging.info("Append job entry to waiting queue %s" % str(jobentry))
+                f.write(str(jobentry)+'\n')
+        else: 
+            # ignore the job that is already in queue 
+            with open(self.qfile_waiting) as f:
+                lns = [l.strip() for l in f.readlines() if l != '\n'] # strip end \n and other space ignore lines too short
+                logdir_lst = [eval(l)['logdir'] for l in lns]
+                if not logdir in logdir_lst:
+                    with open(self.qfile_waiting, 'a') as f:
+                        logging.info("Append job entry to waiting queue %s" % str(jobentry))
+                        f.write(str(jobentry)+'\n')
 
     def on_tracelog_created_or_moved(self, src_path, dest_path=None):
         if dest_path:
@@ -228,42 +245,42 @@ class Reactor():
         if os.path.exists(self.qfile_processing):
             with open(self.qfile_processing) as f:
                 num = len( [l.strip() for l in f.readlines() if l != '\n'] )
-            logging.info("There are %d entries in processing" % num)
         return num
 
     def on_waiting_queue_modified(self, filepath):
         num = self.num_processing_jobs()
-        logging.info('Waiting queue contains %d job entries' % num)
+        logging.info('%d jobs in processing queue' % num)
         if num < self.MAX_JOB_PROCESS:
             #pick the first queued job 
             lns = []
             with open(filepath) as f:            
                 lns = [l.strip() for l in f.readlines() if l != '\n'] # strip end \n and other space ignore lines too short
-                logging.info("Waiting queue contains %d jobs to be processed" % len(lns))
+                logging.info("%d jobs in waiting queue " % len(lns))
                 if len(lns) > 0:
-                    logging.info('Move line from waiting queue to processing queue %s' % lns[0])
                     firstlndic = eval(lns[0])
-                    # set stat                    
-                    logging.info("Set stat value as 1 for %s" % firstlndic['logdir'])
                     server_path = self.as_svr_logdir(firstlndic['logdir'])
+                    # remove first         
+                    with open(filepath, 'w') as f:
+                        if len(lns) > 1:
+                            logging.info("Remove job %s from waiting queue" % server_path)
+                            f.write('\n'.join(lns[1:])+'\n')
+
+                    firstlndic = eval(lns[0])
+                    # set stat 
                     statpath = os.path.join(server_path, '.stat')
                     self.set_stat( statpath,  1)
-                    # append
+                    # append and start
                     firstlndic ['processtime'] = str(datetime.now())
                     with open(self.qfile_processing, 'a') as ff:
-                        ff.write('\n'+str(firstlndic))
-                        logging.info("Append job %s to processing queue" % str(firstlndic))
+                        ff.write(str(firstlndic)+'\n')
+                        logging.info("Append job %s to processing queue" % server_path)
                         # start runner process to processing
                         t = WorkerRunnerThread(statpath, self, TEST) # TODO set to False for product
                         t.run()
-            # remove           
-            with open(filepath, 'w') as f:
-                if len(lns) > 1:
-                    f.write('\n'.join(lns[1:]))
-                    logging.info("Remove job %s from waiting queue" % lns[0])
+
 
     def on_processing_queue_modified(self, filepath):
-        
+        # do nothing now
         pass         
 
 
@@ -387,6 +404,10 @@ if __name__ == '__main__':
     if treaded:
         logging.info("Run in threaded mode")
         reactor = Reactor(socketio=FakeSocketio(), rootdir=xrslog_file_rootdir)
+        if TEST:
+            if os.path.exists(reactor.qfile_waiting): os.remove(reactor.qfile_waiting)
+            if os.path.exists(reactor.qfile_processing): os.remove(reactor.qfile_processing)
+            if os.path.exists(reactor.qfile_finished): os.remove(reactor.qfile_finished)
         run_file_monitor_thread(reactor)
     else:
         w = Watcher()
