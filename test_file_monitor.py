@@ -1,6 +1,11 @@
 import os
 import shutil
 
+# Steps to run this test
+# Start python3 file_monitor.py as xrslog
+# In another shell start python3 test_file_monitory.py as xrslog too.
+# See console output of file_monitor.py
+
 def test_by_create_TraceLog_and_create_request_file_under_it():
     # our logs should goes to this folder
     log_file_rootdir='/home/xrslog/DirectViewLogs'

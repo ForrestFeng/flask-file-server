@@ -13,7 +13,7 @@ import pathlib
 import subprocess
 
 
-TEST = True
+TEST_MODE = False
 
 # ref https://fangpenlin.com/posts/2012/08/26/good-logging-practice-in-python/
 def setup_logging(
@@ -75,11 +75,10 @@ def setup_logging(
         logging.basicConfig(level=default_level)
 
 class WorkerRunnerThread():    
-    def __init__(self, statpath:str, rearctor, simulate=False):
+    def __init__(self, statpath:str, rearctor, external_process:list):
         self.statpath = statpath
-        self.simulate = simulate
         self.reactor = reactor
-        self.EXTERNAL_PROCESS = ["python3", '/home/logadmin/flask-file-server/sleep_10s.py']
+        self.EXTERNAL_PROCESS = external_process
 
     def on_external_process_exit(self, args=None):
         # return inner def
@@ -128,9 +127,10 @@ class FakeSocketio():
 
 class Reactor():
     MAX_JOB_PROCESS = 2
-    def __init__(self, socketio, rootdir):
+    def __init__(self, socketio, rootdir, external_process):
         self.socketio = socketio
         self.rootdir = rootdir
+        self.external_process = external_process
 
     @property    
     def qfile_waiting(self):
@@ -275,7 +275,7 @@ class Reactor():
                         ff.write(str(firstlndic)+'\n')
                         logging.info("Append job %s to processing queue" % server_path)
                         # start runner process to processing
-                        t = WorkerRunnerThread(statpath, self, TEST) # TODO set to False for product
+                        t = WorkerRunnerThread(statpath, self, self.external_process) # TODO set to False for product
                         t.run()
 
 
@@ -329,7 +329,7 @@ class LogMonitorHandler(FileSystemEventHandler):
             self.reactor.on_tracelog_created_or_moved(event.src_path)
 
         # request file
-        if TEST and not event.is_directory and os.path.basename(event.src_path) in ['request']:
+        if TEST_MODE and not event.is_directory and os.path.basename(event.src_path) in ['request']:
             self.reactor.on_request_file_created(event.src_path)
 
 
@@ -371,11 +371,15 @@ def run_file_monitor_thread(reactor, dir_to_watch):
 
 
 if __name__ == '__main__':
+    TEST_MODE = True
     treaded = True
-    loggingcfg = '/home/logadmin/flask-file-server/logging.yaml'  
+
+    loggingcfg = '/home/logadmin/flask-file-server/logging.yaml' 
+    external_process = ["python3", '/home/logadmin/flask-file-server/sim_external_script.py'] 
     #!!!  defalut_logging_rootdir MUST NOT a sub folder of log_file_rootdir
     defalut_logging_rootdir='/home/xrslog'
     log_file_rootdir='/home/xrslog/DirectViewLogs'
+    
     if not os.path.exists(log_file_rootdir):
         os.makedirs(log_file_rootdir)
 
@@ -388,8 +392,10 @@ if __name__ == '__main__':
     setup_logging(loggingcfg, defalut_logging_rootdir=defalut_logging_rootdir)
     if treaded:
         logging.info("Run in threaded mode")
-        reactor = Reactor(socketio=FakeSocketio(), rootdir=log_file_rootdir)
-        if TEST:
+        reactor = Reactor(socketio=FakeSocketio(), 
+                          rootdir=log_file_rootdir, 
+                          external_process=external_process)
+        if TEST_MODE:
             if os.path.exists(reactor.qfile_waiting): os.remove(reactor.qfile_waiting)
             if os.path.exists(reactor.qfile_processing): os.remove(reactor.qfile_processing)
             if os.path.exists(reactor.qfile_finished): os.remove(reactor.qfile_finished)
