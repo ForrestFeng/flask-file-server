@@ -232,12 +232,52 @@ def ping_pong():
 # To make apache2 happy
 application=app
 
+# integrate file_monitor.py
+import logging
+import threading
+#import .file_monitor as fm 
+import file_monitor as FM
+#from file_monitor import setup_logging, Reactor, FakeSocketio, run_file_monitor_thread
+def run_fm():
+    FM.TEST_MODE = True    
+    treaded = True
+
+    loggingcfg = '/home/logadmin/flask-file-server/logging.yaml' 
+    external_process = ["python3", '/home/logadmin/flask-file-server/sim_external_script.py'] 
+    #!!!  defalut_logging_rootdir MUST NOT a sub folder of log_file_rootdir
+    defalut_logging_rootdir='/home/xrslog'
+    log_file_rootdir='/home/xrslog/Logs'
+    
+    if not os.path.exists(log_file_rootdir):
+        os.makedirs(log_file_rootdir)
+
+    # remove log folder if any
+    # loggingdir = os.path.join(defalut_rootdir, '.log')
+    # if os.path.exists(loggingdir):  
+    #     shutil.rmtree(loggingdir)
+    #     os.makedirs(loggingdir)
+
+    FM.setup_logging(loggingcfg, defalut_logging_rootdir=defalut_logging_rootdir)
+    if treaded:
+        logging.info("Run in threaded mode")
+        reactor = FM.Reactor(socketio=FM.FakeSocketio(), 
+                          rootdir=log_file_rootdir, 
+                          external_process=external_process)
+        if FM.TEST_MODE:
+            if os.path.exists(reactor.qfile_waiting): os.remove(reactor.qfile_waiting)
+            if os.path.exists(reactor.qfile_processing): os.remove(reactor.qfile_processing)
+            if os.path.exists(reactor.qfile_finished): os.remove(reactor.qfile_finished)
+        
+        FM.run_file_monitor_thread(reactor, log_file_rootdir)
+
+
 if __name__ == "__main__":
     # app.run does not support socketio 
     # see https://stackoverflow.com/questions/34735206/using-eventlet-to-manage-socketio-in-flask
     # to let socket io run properly we need run it with socketio.run(app)
     # 5000 is falsk defalut port.
     #app.run('0.0.0.0', 5000, threaded=True, debug=True) 
+    run_fm()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
 
     # run with uwsgi 

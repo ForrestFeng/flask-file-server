@@ -75,7 +75,7 @@ def setup_logging(
         logging.basicConfig(level=default_level)
 
 class WorkerRunnerThread():    
-    def __init__(self, statpath:str, rearctor, external_process:list):
+    def __init__(self, statpath:str, reactor, external_process:list):
         self.statpath = statpath
         self.reactor = reactor
         self.EXTERNAL_PROCESS = external_process
@@ -289,9 +289,10 @@ class Watcher:
     def __init__(self, reactor, dir_to_watch):
         self.observer = Observer()
         self.dir_to_watch = dir_to_watch
+        self.reactor = reactor
 
     def run(self):
-        event_handler = LogMonitorHandler(reactor)
+        event_handler = LogMonitorHandler(self.reactor)
         self.observer.schedule(event_handler, self.dir_to_watch, recursive=True)
         self.observer.start()
         try:
