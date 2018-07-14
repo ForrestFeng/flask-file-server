@@ -18,5 +18,11 @@ def test_by_create_TraceLog_and_create_request_file_under_it():
     # simulator user request to start analyze TraceLog
     open('5.7Evo/TraceLog/request','w').write('')
 
+
+    ### Another upload
+    os.makedirs('5.7Evo/SiteIssue2/TraceLog')
+    # simulator user request to start analyze TraceLog
+    open('5.7Evo/SiteIssue2/TraceLog/request','w').write('')
+
 if __name__ == '__main__':
     test_by_create_TraceLog_and_create_request_file_under_it()
