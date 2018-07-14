@@ -286,14 +286,13 @@ class Reactor():
 
 
 class Watcher:
-    DIRECTORY_TO_WATCH = "/home/xrslog/5.7LogRoot"
-
-    def __init__(self, reactor):
+    def __init__(self, reactor, dir_to_watch):
         self.observer = Observer()
+        self.dir_to_watch = dir_to_watch
 
     def run(self):
         event_handler = LogMonitorHandler(reactor)
-        self.observer.schedule(event_handler, self.DIRECTORY_TO_WATCH, recursive=True)
+        self.observer.schedule(event_handler, self.dir_to_watch, recursive=True)
         self.observer.start()
         try:
             while True:
@@ -309,7 +308,6 @@ class LogMonitorHandler(FileSystemEventHandler):
     def __init__(self, reactor):
         self.reactor = reactor
 
-    t1 = "/home/xrslog/5.7LogRoot/t1"
     def on_moved(self, event):
         super(LogMonitorHandler, self).on_moved(event)
 
@@ -326,12 +324,6 @@ class LogMonitorHandler(FileSystemEventHandler):
         what = 'directory' if event.is_directory else 'file'
         logging.info("Created %s: %s", what, event.src_path)
 
-        # when a directory is TraceLog we should create .status file under it
-        if False or event.src_path == self.t1 and os.path.exists(self.t1):
-            #time.sleep(1)
-            #os.rmdir(self.t1)
-            logging.info("**RMDIR")
-
         # TraceLog
         if event.is_directory and os.path.basename(event.src_path) in ["TraceLog"]:
             self.reactor.on_tracelog_created_or_moved(event.src_path)
@@ -346,12 +338,7 @@ class LogMonitorHandler(FileSystemEventHandler):
 
         what = 'directory' if event.is_directory else 'file'
         logging.info("Deleted %s: %s", what, event.src_path)
-        if False or event.src_path == self.t1 and not os.path.exists(self.t1):
-            #time.sleep(1)            
-            #os.mkdir(self.t1)
-            logging.info("**MKDIR")
-
-
+ 
     def on_modified(self, event):
         super(LogMonitorHandler, self).on_modified(event)
 
@@ -367,15 +354,15 @@ class LogMonitorHandler(FileSystemEventHandler):
 
 
 
-def run_file_monitor_thread(reactor):   
+def run_file_monitor_thread(reactor, dir_to_watch):   
 
-    def run_in_thread(reactor):      
-        w = Watcher(reactor)
+    def run_in_thread(reactor, dir_to_watch):      
+        w = Watcher(reactor, dir_to_watch)
         w.run()
         logging.info("File monitor thread is running...")
 
 
-    thread = threading.Thread(target=run_in_thread, args=(reactor,))
+    thread = threading.Thread(target=run_in_thread, args=(reactor,dir_to_watch))
     thread.start()
     logging.info("File monitor thread started")
 
@@ -384,10 +371,13 @@ def run_file_monitor_thread(reactor):
 
 
 if __name__ == '__main__':
+    treaded = True
     loggingcfg = '/home/logadmin/flask-file-server/logging.yaml'  
-    #!!!  defalut_logging_rootdir MUST NOT a sub folder of xrslog_file_rootdir
+    #!!!  defalut_logging_rootdir MUST NOT a sub folder of log_file_rootdir
     defalut_logging_rootdir='/home/xrslog'
-    xrslog_file_rootdir='/home/xrslog/5.7LogRoot'
+    log_file_rootdir='/home/xrslog/DirectViewLogs'
+    if not os.path.exists(log_file_rootdir):
+        os.makedirs(log_file_rootdir)
 
     # remove log folder if any
     # loggingdir = os.path.join(defalut_rootdir, '.log')
@@ -396,20 +386,15 @@ if __name__ == '__main__':
     #     os.makedirs(loggingdir)
 
     setup_logging(loggingcfg, defalut_logging_rootdir=defalut_logging_rootdir)
-
-    
-
-    treaded = True
-
     if treaded:
         logging.info("Run in threaded mode")
-        reactor = Reactor(socketio=FakeSocketio(), rootdir=xrslog_file_rootdir)
+        reactor = Reactor(socketio=FakeSocketio(), rootdir=log_file_rootdir)
         if TEST:
             if os.path.exists(reactor.qfile_waiting): os.remove(reactor.qfile_waiting)
             if os.path.exists(reactor.qfile_processing): os.remove(reactor.qfile_processing)
             if os.path.exists(reactor.qfile_finished): os.remove(reactor.qfile_finished)
-        run_file_monitor_thread(reactor)
+        run_file_monitor_thread(reactor, log_file_rootdir)
     else:
         w = Watcher()
         w.run()
-    logging.info("Main function exit!")
+    logging.info("Main function last line!")
