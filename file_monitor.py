@@ -121,9 +121,12 @@ class WorkerRunnerThread():
         self.popen_and_call(self.on_external_process_exit(),  self.EXTERNAL_PROCESS + ARGS)
 
 class FakeSocketio():
-    def emit(self, *args):
-        msg = str(args)
-        logging.info( "FakeSocketio emit %s" % msg)
+    def emit(self, msg, data={}, broadcast=False):
+        items = []
+        for k in sorted(data.keys()):
+            items.append('%s:%s' % (k, data[k]) )
+        sdata = '{%s}' % (','.join(items))
+        logging.info( "FakeSocketio emit %s %s" % (msg, sdata) )
 
 class Reactor():
     MAX_JOB_PROCESS = 2
@@ -147,6 +150,10 @@ class Reactor():
     
     def job_entry(self, logdir:str, models=['All'], queuetime='', processtime='', finishtime='', exitcode=''):
         return dict(logdir=logdir, models=models, queuetime=queuetime, processtime=processtime, finishtime=finishtime, exitcode=exitcode)
+    def job_str(self, jobentry):
+        je = jobentry
+        return "{'logdir':'%s', 'models':%s, 'queuetime':'%s', 'processtime':'%s', 'finishtime':'%s', 'exitcode':'%s'}" % (je['logdir'],
+            je['models'], je['queuetime'], je['processtime'], je['finishtime'], je['exitcode'])
 
     def as_svr_logdir(self, logdir:str):
         assert len(logdir) > 0 
@@ -165,9 +172,10 @@ class Reactor():
 
     def move_job_entry_from_processing_to_finished(self, statpath:str, exitcode:int):
         logging.info('Move job to finished queue %s' % statpath)   
-        lns = []       
-        with open(self.qfile_processing) as f:
-            wlogdir = self.as_web_logdir(statpath)
+        lns = []  
+        wlogdir = self.as_web_logdir(statpath)    
+
+        with open(self.qfile_processing) as f:            
             lns = [ln.strip() for ln in f.readlines() if ln != '\n']
 
         # regenerate processing job
@@ -177,17 +185,17 @@ class Reactor():
             if jobentry['logdir'] == wlogdir:
                 jobentry['finishtime'] = str(datetime.now())
                 jobentry['exitcode'] = str(exitcode)
-                mewln = str(jobentry)
+                mewln = self.job_str(jobentry)
                 if not os.path.exists(self.qfile_finished):
                     with open(self.qfile_finished, 'w') as ff:
                         ff.write(mewln+'\n')
                 else:                      
                     with open(self.qfile_finished, 'a') as ff:
-                        ff.write('\n'.join(mewln)+'\n')
+                        ff.write(mewln+'\n')
             else:
                 plns.append(ln)
         # update processing queue
-        logging.debug("plns data %s; lns data %s" % (plns, lns))
+        logging.info("Origianl processing jos %s, After remove %s; " % (lns, plns))
         if len(plns) < len(lns):
             with open(self.qfile_processing, 'w') as f:
                 f.write('\n'.join(plns))
@@ -196,7 +204,7 @@ class Reactor():
     def broadcast_stat(self, logdir, stat):
         #broadcast to all client via websocket
         broadcast = True
-        self.socketio.emit('status_report_event',  {'logdir': logdir, 'stat':stat}, broadcast)
+        self.socketio.emit('*** status_report_event',  data={'logdir': logdir, 'stat':stat}, broadcast=True)
 
     def append_to_waiting_queue(self, statpath):
         logdir = self.as_web_logdir(statpath)
@@ -204,8 +212,8 @@ class Reactor():
         if not os.path.exists(self.qfile_waiting): 
             # append directly if no file exist
             with open(self.qfile_waiting, 'w') as f:
-                logging.info("Append job entry to waiting queue %s" % str(jobentry))
-                f.write(str(jobentry)+'\n')
+                logging.info("Append job entry to waiting queue %s" % self.job_str(jobentry))
+                f.write(self.job_str(jobentry)+'\n')
         else: 
             # ignore the job that is already in queue 
             with open(self.qfile_waiting) as f:
@@ -213,8 +221,8 @@ class Reactor():
                 logdir_lst = [eval(l)['logdir'] for l in lns]
                 if not logdir in logdir_lst:
                     with open(self.qfile_waiting, 'a') as f:
-                        logging.info("Append job entry to waiting queue %s" % str(jobentry))
-                        f.write(str(jobentry)+'\n')
+                        logging.info("Append job entry to waiting queue %s" % self.job_str(jobentry))
+                        f.write(self.job_str(jobentry)+'\n')
 
     def on_tracelog_created_or_moved(self, src_path, dest_path=None):
         if dest_path:

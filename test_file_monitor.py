@@ -1,4 +1,5 @@
 import os
+import time
 import shutil
 
 # Steps to run this test
@@ -13,16 +14,23 @@ def test_by_create_TraceLog_and_create_request_file_under_it():
     os.chdir(log_file_rootdir)
     if os.path.exists('5.7Evo'): 
         shutil.rmtree('5.7Evo')
+
     # simulate TraceLog file uploaded
-    os.makedirs('5.7Evo/TraceLog')
+    os.makedirs('5.7Evo/SiteIssue_01/TraceLog')
     # simulator user request to start analyze TraceLog
-    open('5.7Evo/TraceLog/request','w').write('')
+    open('5.7Evo/SiteIssue_01/TraceLog/request','w').write('')
 
-
+    time.sleep(1)
     ### Another upload
-    os.makedirs('5.7Evo/SiteIssue2/TraceLog')
+    os.makedirs('5.7Evo/SiteIssue_02/TraceLog')
     # simulator user request to start analyze TraceLog
-    open('5.7Evo/SiteIssue2/TraceLog/request','w').write('')
+    open('5.7Evo/SiteIssue_02/TraceLog/request','w').write('')
+    
+    time.sleep(1)
+    ### Another upload
+    os.makedirs('5.7Evo/SiteIssue_03/TraceLog')
+    # simulator user request to start analyze TraceLog
+    open('5.7Evo/SiteIssue_03/TraceLog/request','w').write('')
 
 if __name__ == '__main__':
     test_by_create_TraceLog_and_create_request_file_under_it()
