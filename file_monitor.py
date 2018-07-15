@@ -75,23 +75,18 @@ def setup_logging(
         logging.basicConfig(level=default_level)
 
 class WorkerRunnerThread():    
-    def __init__(self, statpath:str, reactor, external_process:list):
+    def __init__(self, statpath:str, tracker, external_process:list):
         self.statpath = statpath
-        self.reactor = reactor
+        self.tracker = tracker
         self.EXTERNAL_PROCESS = external_process
 
     def on_external_process_exit(self, args=None):
         # return inner def
-        def update_job_in_db(proc):        
+        def callback(proc):        
             exitcode = proc.returncode
             logging.info( "Args %s, process exitcode %s" % (proc.args, exitcode) )
-            if proc.returncode == 0:
-                self.reactor.set_stat(self.statpath, 100)
-            else:
-                sself.reactor.set_stat(self.statpath, exitcode)                
-            # remove job entry from processing queue
-            self.reactor.move_job_entry_from_processing_to_finished(self.statpath, exitcode)
-        return update_job_in_db
+            self.tracker.finish_job(self.statpath, exitcode)   
+        return callback
 
     def popen_and_call(self, on_exit, popenArgs, **popenKWArgs):
         """
@@ -120,40 +115,41 @@ class WorkerRunnerThread():
         ARGS = [self.statpath]
         self.popen_and_call(self.on_external_process_exit(),  self.EXTERNAL_PROCESS + ARGS)
 
-class FakeSocketio():
-    def emit(self, msg, data={}, broadcast=False):
-        items = []
-        for k in sorted(data.keys()):
-            items.append('%s:%s' % (k, data[k]) )
-        sdata = '{%s}' % (','.join(items))
-        logging.info( "FakeSocketio emit %s %s" % (msg, sdata) )
-
-class Reactor():
+class JobTracker():
     MAX_JOB_PROCESS = 2
-    def __init__(self, socketio, rootdir, external_process):
+    def __init__(self, socketio=None, rootdir=None, external_process=None):
+        self.jobentry_dict = {}
         self.socketio = socketio
         self.rootdir = rootdir
         self.external_process = external_process
+        self.run_schedule_thread()
 
-    @property    
-    def qfile_waiting(self):
-        # return the abs file of the 
-        return os.path.join(self.rootdir, '.waiting_queue')
-    @property  
-    def qfile_processing(self):
-        # return the abs file of the 
-        return os.path.join(self.rootdir, '.processing_queue')
-    @property  
-    def qfile_finished(self):
-        # return the abs file of the 
-        return os.path.join(self.rootdir, '.finished_queue')
-    
+    def set_stat(self, statpath, value:int):
+        with open(statpath, 'w') as f:
+            logging.info('Set stat %s to %d' % (statpath, value) )
+            f.write(str(value))
     def job_entry(self, logdir:str, models=['All'], queuetime='', processtime='', finishtime='', exitcode=''):
         return dict(logdir=logdir, models=models, queuetime=queuetime, processtime=processtime, finishtime=finishtime, exitcode=exitcode)
     def job_str(self, jobentry):
         je = jobentry
         return "{'logdir':'%s', 'models':%s, 'queuetime':'%s', 'processtime':'%s', 'finishtime':'%s', 'exitcode':'%s'}" % (je['logdir'],
-            je['models'], je['queuetime'], je['processtime'], je['finishtime'], je['exitcode'])
+            je['models'], je['queuetime'], je['processtime'], je['finishtime'], je['exitcode'])   
+    def finish_job(self, statpath, exitcode):
+        logdir = self.as_web_logdir(statpath)  
+        logging.info('Finish job %s' % logdir)
+        # set stat exit code
+        if exitcode == 0:
+            self.set_stat(statpath, 100)
+        else:
+            self.set_stat(statpath, exitcode) 
+        # removed from the jobentry_dict
+        job = self.jobentry_dict.pop(logdir)
+        job['finishtime'] = str(datetime.now())
+        job['exitcode'] = str(exitcode)
+        # save to history
+        history = statpath[:-5]+'.history'
+        with open(history, 'a') as f:
+            f.write(self.job_str(job) + '\n')
 
     def as_svr_logdir(self, logdir:str):
         assert len(logdir) > 0 
@@ -165,142 +161,87 @@ class Reactor():
         dirpath = os.path.dirname(statpath)
         return pathlib.Path(dirpath).relative_to(self.rootdir).as_posix()
 
-    def set_stat(self, statpath, value:int):
-        with open(statpath, 'w') as f:
-            logging.info('Set stat %s to %d' % (statpath, value) )
-            f.write(str(value))
+    def add(self, jobentry):
+        self.jobentry_dict[jobentry['logdir']] = jobentry
 
-    def move_job_entry_from_processing_to_finished(self, statpath:str, exitcode:int):
-        logging.info('Move job to finished queue %s' % statpath)   
-        lns = []  
-        wlogdir = self.as_web_logdir(statpath)    
-
-        with open(self.qfile_processing) as f:            
-            lns = [ln.strip() for ln in f.readlines() if ln != '\n']
-
-        # regenerate processing job
-        plns = []
-        for ln in lns:
-            jobentry = eval(ln)
-            if jobentry['logdir'] == wlogdir:
-                jobentry['finishtime'] = str(datetime.now())
-                jobentry['exitcode'] = str(exitcode)
-                mewln = self.job_str(jobentry)
-                if not os.path.exists(self.qfile_finished):
-                    with open(self.qfile_finished, 'w') as ff:
-                        ff.write(mewln+'\n')
-                else:                      
-                    with open(self.qfile_finished, 'a') as ff:
-                        ff.write(mewln+'\n')
-            else:
-                plns.append(ln)
-        # update processing queue
-        logging.info("Origianl processing jos %s, After remove %s; " % (lns, plns))
-        if len(plns) < len(lns):
-            with open(self.qfile_processing, 'w') as f:
-                f.write('\n'.join(plns))
-
-
-    def broadcast_stat(self, logdir, stat):
-        #broadcast to all client via websocket
-        broadcast = True
-        self.socketio.emit('*** status_report_event',  data={'logdir': logdir, 'stat':stat}, broadcast=True)
-
-    def append_to_waiting_queue(self, statpath):
-        logdir = self.as_web_logdir(statpath)
-        jobentry = self.job_entry(logdir, ["All"], str(datetime.now()) )        
-        if not os.path.exists(self.qfile_waiting): 
-            # append directly if no file exist
-            with open(self.qfile_waiting, 'w') as f:
-                logging.info("Append job entry to waiting queue %s" % self.job_str(jobentry))
-                f.write(self.job_str(jobentry)+'\n')
-        else: 
-            # ignore the job that is already in queue 
-            with open(self.qfile_waiting) as f:
-                lns = [l.strip() for l in f.readlines() if l != '\n'] # strip end \n and other space ignore lines too short
-                logdir_lst = [eval(l)['logdir'] for l in lns]
-                if not logdir in logdir_lst:
-                    with open(self.qfile_waiting, 'a') as f:
-                        logging.info("Append job entry to waiting queue %s" % self.job_str(jobentry))
-                        f.write(self.job_str(jobentry)+'\n')
-
+    def update(self, jobentry):
+        assert jobentry['logdir'] in self.jobentry_dict
+        
     def on_tracelog_created_or_moved(self, src_path, dest_path=None):
         if dest_path:
             self.set_stat(os.path.join(dest_path, '.stat'), -100)
         else:
             self.set_stat(os.path.join(src_path, '.stat'), -100)
-
-
-    def on_request_file_created(self, requestpath):
-        # only used for test
-        # user click request file under TraceLog trigger this
-        logdir = os.path.dirname(requestpath)
-        logging.info('User request to anylyze %s' % logdir)
-        self.set_stat(os.path.join(logdir, '.stat'), 0)
-
-
     def on_stat_modified(self, statpath): 
         svalue = None
         with open(statpath) as f:                   
             svalue = int(f.read().strip())            
         self.broadcast_stat(logdir=self.as_web_logdir(statpath), stat=svalue)
-        if svalue == 0:
-            self.append_to_waiting_queue(statpath)
+    def broadcast_stat(self, logdir, stat):
+        #broadcast to all client via websocket
+        broadcast = True
+        self.socketio.emit('*** status_report_event',  data={'logdir': logdir, 'stat':stat}, broadcast=True)
+    def on_request_file_created(self, requestpath):
+        # only used for test
+        # user click request file under TraceLog trigger this
+        svr_logdir = os.path.dirname(requestpath)
+        logging.info('User request to anylyze %s' % svr_logdir)
+        statpath = os.path.join(svr_logdir, '.stat')
+        self.set_stat(statpath, 0)
+        logdir = self.as_web_logdir(statpath)
+        self.jobentry_dict[logdir] = self.job_entry(logdir, queuetime=str(datetime.now()))
 
-    def num_processing_jobs(self):
-        # return how many job entries in the processing queue
-        num = 0
-        if os.path.exists(self.qfile_processing):
-            with open(self.qfile_processing) as f:
-                num = len( [l.strip() for l in f.readlines() if l != '\n'] )
-        return num
+    def run_schedule_thread(self):   
+        def run_in_thread(self):      
+            while True:
+                jobs = self.jobentry_dict.copy()
+                process_jobs = [ v for v in jobs.values() if v['exitcode']=='' and v['processtime']!='']
+                sorted_waiting_jobs = [ v for v in jobs.values() if v['processtime']=='' and v['queuetime']!='']
+                sorted_waiting_jobs.sort(key=lambda j: j['queuetime'])
+                # still has slot to run external process?
+                if len(process_jobs) >= self.MAX_JOB_PROCESS:
+                    time.sleep(5)
+                    continue
+                # pick first queued job
+                if len(sorted_waiting_jobs) == 0:
+                    continue                
+                j = sorted_waiting_jobs[0]
+                server_path = self.as_svr_logdir(j['logdir'])  
 
-    def on_waiting_queue_modified(self, filepath):
-        num = self.num_processing_jobs()
-        logging.info('%d jobs in processing queue' % num)
-        if num < self.MAX_JOB_PROCESS:
-            #pick the first queued job 
-            lns = []
-            with open(filepath) as f:            
-                lns = [l.strip() for l in f.readlines() if l != '\n'] # strip end \n and other space ignore lines too short
-                logging.info("%d jobs in waiting queue " % len(lns))
-                if len(lns) > 0:
-                    firstlndic = eval(lns[0])
-                    server_path = self.as_svr_logdir(firstlndic['logdir'])
-                    # remove first         
-                    with open(filepath, 'w') as f:
-                        if len(lns) > 1:
-                            logging.info("Remove job %s from waiting queue" % server_path)
-                            f.write('\n'.join(lns[1:])+'\n')
+                # set stat 1
+                statpath = os.path.join(server_path, '.stat')
+                self.set_stat( statpath,  1)
 
-                    firstlndic = eval(lns[0])
-                    # set stat 
-                    statpath = os.path.join(server_path, '.stat')
-                    self.set_stat( statpath,  1)
-                    # append and start
-                    firstlndic ['processtime'] = str(datetime.now())
-                    with open(self.qfile_processing, 'a') as ff:
-                        ff.write(str(firstlndic)+'\n')
-                        logging.info("Append job %s to processing queue" % server_path)
-                        # start runner process to processing
-                        t = WorkerRunnerThread(statpath, self, self.external_process) # TODO set to False for product
-                        t.run()
+                # append and start
+                j['processtime'] = str(datetime.now())               
+                logging.info("Process %s" % j['logdir'])
+                # start runner process to processing
+                t = WorkerRunnerThread(statpath, self, self.external_process) # TODO set to False for product
+                t.run()
+
+        thread = threading.Thread(target=run_in_thread, args=(self,))
+        thread.start()
+        logging.info("Job tracker schedule thread started")
+
+        return thread # returns immediately after the thread starts 
 
 
-    def on_processing_queue_modified(self, filepath):
-        # do nothing now
-        pass         
-
-
+class FakeSocketio():
+    def emit(self, msg, data={}, broadcast=False):
+        items = []
+        for k in sorted(data.keys()):
+            items.append('%s:%s' % (k, data[k]) )
+        sdata = '{%s}' % (','.join(items))
+        logging.info( "FakeSocketio emit %s %s" % (msg, sdata) )
 
 class Watcher:
-    def __init__(self, reactor, dir_to_watch):
+    def __init__(self, tracker, dir_to_watch):
         self.observer = Observer()
         self.dir_to_watch = dir_to_watch
-        self.reactor = reactor
+        self.tracker = tracker
 
     def run(self):
-        event_handler = LogMonitorHandler(self.reactor)
+        event_handler = LogMonitorHandler(self.tracker)
         self.observer.schedule(event_handler, self.dir_to_watch, recursive=True)
         self.observer.start()
         try:
@@ -314,8 +255,8 @@ class Watcher:
 
 
 class LogMonitorHandler(FileSystemEventHandler):
-    def __init__(self, reactor):
-        self.reactor = reactor
+    def __init__(self, tracker):
+        self.tracker = tracker
 
     def on_moved(self, event):
         super(LogMonitorHandler, self).on_moved(event)
@@ -323,9 +264,9 @@ class LogMonitorHandler(FileSystemEventHandler):
         what = 'directory' if event.is_directory else 'file'
         logging.info("Moved %s: from %s to %s", what, event.src_path,
                      event.dest_path)
-        # TraceLog
+        # TraceLog created
         if event.is_directory and os.path.basename(event.dest_path) in ["TraceLog"]:
-            self.reactor.on_tracelog_created_or_moved(None, event.dest_path)
+            self.tracker.on_tracelog_created_or_moved(None, event.dest_path)
 
     def on_created(self, event):
         super(LogMonitorHandler, self).on_created(event)
@@ -335,11 +276,11 @@ class LogMonitorHandler(FileSystemEventHandler):
 
         # TraceLog
         if event.is_directory and os.path.basename(event.src_path) in ["TraceLog"]:
-            self.reactor.on_tracelog_created_or_moved(event.src_path)
+            self.tracker.on_tracelog_created_or_moved(event.src_path)
 
         # request file
         if TEST_MODE and not event.is_directory and os.path.basename(event.src_path) in ['request']:
-            self.reactor.on_request_file_created(event.src_path)
+            self.tracker.on_request_file_created(event.src_path)
 
 
     def on_deleted(self, event):
@@ -356,22 +297,18 @@ class LogMonitorHandler(FileSystemEventHandler):
 
         # Watiting queue
         if not event.is_directory:
-            if event.src_path == self.reactor.qfile_waiting:
-                self.reactor.on_waiting_queue_modified(event.src_path)
             if os.path.basename(event.src_path) == '.stat':
-                self.reactor.on_stat_modified(event.src_path)
+                self.tracker.on_stat_modified(event.src_path)
 
+def run_file_monitor_thread(tracker, dir_to_watch):   
 
-
-def run_file_monitor_thread(reactor, dir_to_watch):   
-
-    def run_in_thread(reactor, dir_to_watch):      
-        w = Watcher(reactor, dir_to_watch)
+    def run_in_thread(tracker, dir_to_watch):      
+        w = Watcher(tracker, dir_to_watch)
         w.run()
         logging.info("File monitor thread is running...")
 
 
-    thread = threading.Thread(target=run_in_thread, args=(reactor,dir_to_watch))
+    thread = threading.Thread(target=run_in_thread, args=(tracker, dir_to_watch))
     thread.start()
     logging.info("File monitor thread started")
 
@@ -401,14 +338,14 @@ if __name__ == '__main__':
     setup_logging(loggingcfg, defalut_logging_rootdir=defalut_logging_rootdir)
     if treaded:
         logging.info("Run in threaded mode")
-        reactor = Reactor(socketio=FakeSocketio(), 
+        tracker = JobTracker(socketio=FakeSocketio(), 
                           rootdir=log_file_rootdir, 
                           external_process=external_process)
         if TEST_MODE:
-            if os.path.exists(reactor.qfile_waiting): os.remove(reactor.qfile_waiting)
-            if os.path.exists(reactor.qfile_processing): os.remove(reactor.qfile_processing)
-            if os.path.exists(reactor.qfile_finished): os.remove(reactor.qfile_finished)
-        run_file_monitor_thread(reactor, log_file_rootdir)
+            if os.path.exists(tracker.qfile_waiting): os.remove(tracker.qfile_waiting)
+            if os.path.exists(tracker.qfile_processing): os.remove(tracker.qfile_processing)
+            if os.path.exists(tracker.qfile_finished): os.remove(tracker.qfile_finished)
+        run_file_monitor_thread(tracker, log_file_rootdir)
     else:
         w = Watcher()
         w.run()

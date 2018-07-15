@@ -237,7 +237,7 @@ import logging
 import threading
 #import .file_monitor as fm 
 import file_monitor as FM
-#from file_monitor import setup_logging, Reactor, FakeSocketio, run_file_monitor_thread
+#from file_monitor import setup_logging, tracker, FakeSocketio, run_file_monitor_thread
 def run_fm():
     FM.TEST_MODE = True    
     treaded = True
@@ -260,15 +260,11 @@ def run_fm():
     FM.setup_logging(loggingcfg, defalut_logging_rootdir=defalut_logging_rootdir)
     if treaded:
         logging.info("Run in threaded mode")
-        reactor = FM.Reactor(socketio=FM.FakeSocketio(), 
+        tracker = FM.JobTracker(socketio=FM.FakeSocketio(), 
                           rootdir=log_file_rootdir, 
                           external_process=external_process)
-        if FM.TEST_MODE:
-            if os.path.exists(reactor.qfile_waiting): os.remove(reactor.qfile_waiting)
-            if os.path.exists(reactor.qfile_processing): os.remove(reactor.qfile_processing)
-            if os.path.exists(reactor.qfile_finished): os.remove(reactor.qfile_finished)
         
-        FM.run_file_monitor_thread(reactor, log_file_rootdir)
+        FM.run_file_monitor_thread(tracker, log_file_rootdir)
 
 
 if __name__ == "__main__":
