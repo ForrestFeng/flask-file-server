@@ -11,7 +11,7 @@ import threading
 from datetime import datetime
 import pathlib
 import subprocess
-
+import ctypes
 
 TEST_MODE = False
 
@@ -83,7 +83,10 @@ class WorkerRunnerThread():
     def on_external_process_exit(self, args=None):
         # return inner def
         def callback(proc):        
-            exitcode = proc.returncode
+            # external process return negtive code -1, 
+            # the proc.returncode here is 255
+            # we need a -1 so use cpytpe.c_int8 to convert it
+            exitcode =  ctypes.c_int8(proc.returncode).value
             logging.info( "Args %s, process exitcode %s" % (proc.args, exitcode) )
             self.tracker.finish_job(self.statpath, exitcode)   
         return callback
@@ -139,7 +142,7 @@ class JobTracker():
         logging.info('Finish job %s' % logdir)
         # set stat exit code
         if exitcode == 0:
-            self.set_stat(statpath, 100)
+            self.set_stat(statpath, 101)
         else:
             self.set_stat(statpath, exitcode) 
         # removed from the jobentry_dict
@@ -175,22 +178,35 @@ class JobTracker():
     def on_stat_modified(self, statpath): 
         svalue = None
         with open(statpath) as f:                   
-            svalue = int(f.read().strip())            
+            svalue = int(f.read().strip()) 
+           
+        logdir = self.as_web_logdir(statpath)     
+        logging.info('*** broadcasting logdir=%s | stat=%s' % (logdir, svalue))   
         self.broadcast_stat(logdir=self.as_web_logdir(statpath), stat=svalue)
     def broadcast_stat(self, logdir, stat):
         #broadcast to all client via websocket
         broadcast = True
-        self.socketio.emit('*** status_report_event',  data={'logdir': logdir, 'stat':stat}, broadcast=True)
+        logging.info('>>> stat_report_event logdir=%s | stat=%s' % (logdir, stat)) 
+        self.socketio.emit('stat_report_event',  data={'logdir': logdir, 'stat':stat}, namespace='/NSloganalyze', broadcast=True)
     def on_request_file_created(self, requestpath):
         # only used for test
         # user click request file under TraceLog trigger this
         svr_logdir = os.path.dirname(requestpath)
-        logging.info('User request to anylyze %s' % svr_logdir)
+        statpath = os.path.join(svr_logdir, '.stat')
+        logdir = self.as_web_logdir(statpath)
+        logging.info('User request to anylyze %s' % logdir)        
+        self.set_stat(statpath, 0)        
+        if not logdir in self.jobentry_dict:
+            logging.info('Queue job %s' % logdir)
+            self.jobentry_dict[logdir] = self.job_entry(logdir, queuetime=str(datetime.now()))
+    def on_analyze_request(self, logdir):
+        svr_logdir = self.as_svr_logdir(logdir)
+        logging.info('User request to anylyze %s' % logdir)
         statpath = os.path.join(svr_logdir, '.stat')
         self.set_stat(statpath, 0)
-        logdir = self.as_web_logdir(statpath)
-        self.jobentry_dict[logdir] = self.job_entry(logdir, queuetime=str(datetime.now()))
-
+        if not logdir in self.jobentry_dict:
+            logging.info('Queue job %s' % logdir)
+            self.jobentry_dict[logdir] = self.job_entry(logdir, queuetime=str(datetime.now()))
     def run_schedule_thread(self):   
         def run_in_thread(self):      
             while True:
@@ -200,7 +216,7 @@ class JobTracker():
                 sorted_waiting_jobs.sort(key=lambda j: j['queuetime'])
                 # still has slot to run external process?
                 if len(process_jobs) >= self.MAX_JOB_PROCESS:
-                    time.sleep(5)
+                    time.sleep(1)
                     continue
                 # pick first queued job
                 if len(sorted_waiting_jobs) == 0:
@@ -295,7 +311,7 @@ class LogMonitorHandler(FileSystemEventHandler):
         what = 'directory' if event.is_directory else 'file'
         logging.info("Modified %s: %s", what, event.src_path)
 
-        # Watiting queue
+        # stat
         if not event.is_directory:
             if os.path.basename(event.src_path) == '.stat':
                 self.tracker.on_stat_modified(event.src_path)

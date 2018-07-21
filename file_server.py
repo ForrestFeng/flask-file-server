@@ -19,7 +19,7 @@ root = os.path.join(os.path.expanduser('~'), 'Logs')
 # Such a folder must contains index.html file for the report.
 # Users can just click the report folder to see the report :)
 # Folder name is in lower case to easy the judge in index.html
-reportfolders = ['tracereport']
+reportfolders = ['tracereport', 'tracelogreport']
 # Used to indentify folders that contains xrs trace log file. 
 # Such a folder contains one or mall log files to be analyzed.
 # Usaully there will be a "Analyze" button on the right of the folder row.
@@ -135,6 +135,20 @@ class PathView(MethodView):
                 sz = stat_res.st_size
                 info['size'] = sz
                 total['size'] += sz
+                # include .stat value
+                progress = -100
+                statpath = os.path.join(filepath, '.stat')
+                if filename.lower() in xrslogfolders and os.path.exists(statpath):
+                    with open(statpath) as f:
+                        progress = int(f.read())
+                info['progress'] = progress
+                
+                # include button status
+                # info['status'] = 'HideAnalyze' # progress >= 0 && progress <= 100
+                # if progress != 0 :
+                #     info['status'] = 'HideWaiting'
+                # if progress < 1 or  entry.progress > 100:
+                #     info['status'] = 'HideProgress'
                 contents.append(info)
             page = render_template('index.html', path=p, contents=contents, total=total, 
                 DEBUG=DEBUG,
@@ -190,39 +204,39 @@ app.add_url_rule('/<path:p>', view_func=path_view )
 # Part of socket io
 
 # The only entry to start to analyze log file
-def analyze(url):
+def analyze(logdir):
     # Add this job if it is not in DB
-    # Otherwise return the job status in DB 
+    # Otherwise return the job stat in DB
+    logging.info('^^^^^^ handle analyze job_tracker is None? %s' % str(job_tracker == None))
+    if job_tracker != None:
+        job_tracker.on_analyze_request(logdir)
     return 0
-
 
 from flask_socketio import SocketIO, emit
 async_mode = None
-socketio = None
 socketio = SocketIO(app, async_mode=async_mode)    
 app.config['SECRET_KEY'] = 'secret!'
+# Lessons learn, socketio.send or emit need do not forget the namespace kwarg
+# Ref broadcast section at https://flask-socketio.readthedocs.io/en/latest/ 
 namespace = '/NSloganalyze'
-
 
 @socketio.on('connect', namespace=namespace)
 def client_connect():
-    emit('status_report_event',  {'url': 'x/y/z', 'status':0})
+    emit('stat_report_event',  {'logdir': 'x/y/z', 'stat':0})
 
-
-@socketio.on('status_request_event', namespace=namespace)
-def status_request_event(message):
-    emit('status_report_event',
-         {'url': 'a/b/c', 'status':100},
+@socketio.on('stat_request_event', namespace=namespace)
+def stat_request_event(message):
+    emit('stat_report_event',
+         {'logdir': 'a/b/c', 'stat':100},
          broadcast=True)
 
 @socketio.on('analyze_request_event', namespace=namespace)
 def analyze_request_event(message):
-    # logic to check the requested url status
-    url = message['url']
-    status = analyze(url)
-    emit('status_report_event',
-         {'url':url, 'status':status},
-         broadcast=True)
+    # logic to check the requested logdir stat
+    logging.info("Web server analyze_request_event  %s" % message)
+    logdir = message['logdir']
+    analyze(logdir)
+    #emit('stat_report_event', {'logdir':logdir, 'stat':9}, broadcast=True)
 
 @socketio.on('my_ping', namespace=namespace)
 def ping_pong():
@@ -237,6 +251,7 @@ import logging
 import threading
 #import .file_monitor as fm 
 import file_monitor as FM
+job_tracker = None
 #from file_monitor import setup_logging, tracker, FakeSocketio, run_file_monitor_thread
 def run_fm():
     FM.TEST_MODE = True    
@@ -260,9 +275,11 @@ def run_fm():
     FM.setup_logging(loggingcfg, defalut_logging_rootdir=defalut_logging_rootdir)
     if treaded:
         logging.info("Run in threaded mode")
-        tracker = FM.JobTracker(socketio=FM.FakeSocketio(), 
+        tracker = FM.JobTracker(socketio=socketio, #FM.FakeSocketio() if FM.TEST_MODE else socketio, 
                           rootdir=log_file_rootdir, 
                           external_process=external_process)
+        global job_tracker
+        job_tracker = tracker
         
         FM.run_file_monitor_thread(tracker, log_file_rootdir)
 

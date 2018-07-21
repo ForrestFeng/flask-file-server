@@ -8,6 +8,7 @@
   <title>File System</title>
   <link rel="stylesheet" href="{{url_for('static', filename='css/listr.pack.css')}}">
   <link rel="stylesheet" href="{{url_for('static', filename='css/jquery.filer.css')}}">
+  <link rel="stylesheet" href="{{url_for('static', filename='css/customize.css')}}">
 
   <script type="text/javascript" src="{{url_for('static', filename='js/jquery.min.js')}}"></script>
 
@@ -39,10 +40,48 @@
             // The callback function is invoked whenever the server emits data
             // to the client. The data is then displayed in the "Received"
             // section of the page.
-            socket.on('status_report_event', function(msg) {
+            socket.on('stat_report_event', function(msg) {
 		{% if DEBUG %}
-                $('#log').append('<br>' + $('<div/>').text('Status_report_event from server #' + msg.url + '# ' + msg.status).html());
+                $('#log').append('<br>' + $('<div/>').text('stat_report_event from server logdir: ' + msg.logdir + '; stat:' + msg.stat).html());
 		{% endif %}
+            if ($('#analyze-btn').attr('logdir')==msg.logdir){
+              
+              if(msg.stat == -100) {
+                // New TraceLog folder or TraceLog folder moved
+                $('#analyze-btn').removeClass().show()
+                $('#waiting-btn').hide()
+                $('#progress-btn').hide()               
+              }else if(msg.stat >= -10 && msg.stat <= -1) {
+                // Analyze failed, stat value  equals to external rocess exit code
+                $('#analyze-btn').removeClass().addClass("btn la-failed").show()
+                $('#waiting-btn').hide()
+                $('#progress-btn').hide()
+                // reload to see the TraceLogReport folder
+                location.reload()
+              }else if (msg.stat == 0 ){
+                $('#analyze-btn').hide()
+                $('#waiting-btn').removeClass().addClass("btn la-waiting").show()
+                $('#progress-btn').hide()
+              }else if (msg.stat > 0 && msg.stat <= 100){
+                $('#analyze-btn').hide()
+                $('#waiting-btn').hide()
+                $('#progress-btn').text(msg.stat+'/100 ').append('<i class="fa fa-spinner fa-spin"></i>')
+                $('#progress-btn').show()
+              }else if(msg.stat == 101) {
+                // Analyze failed, stat value  equals to external rocess exit code
+                $('#analyze-btn').removeClass().addClass("btn la-success").show()
+                $('#waiting-btn').hide()
+                $('#progress-btn').hide()
+                // reload to see the TraceLogReport folder
+                location.reload()
+              }else {
+    {% if DEBUG %}
+                $('#log').append('<br>' + $('<div/>').text('Unknown stat value from server: ' + msg.logdir + '; stat:' + msg.stat).html());
+    {% endif %}
+              }
+
+            }
+
             });
 
             // Interval function that tests message latency by sending a "ping"
@@ -53,7 +92,7 @@
             window.setInterval(function() {
                 start_time = (new Date).getTime();
 		{% if DEBUG %}
-                socket.emit('my_ping');
+                //socket.emit('my_ping');
 		{% endif %}
             }, 1000);
 
@@ -72,9 +111,9 @@
 	    // Hander of analyze button click
 	 $('#analyze-btn').click(function() {
 		{% if DEBUG %}
-                $('#log').append('<br>' + $('<div/>').text('Analyze button clicked').html());
+      $('#log').append('<br>' + $('<div/>').text('Analyze button clicked').html());
 		{% endif %}
-		socket.emit('analyze_request_event', {url:$('#analyze-btn').attr('url')});
+		socket.emit('analyze_request_event', {logdir:$('#analyze-btn').attr('logdir')});
 	    });
         });
     </script>
@@ -133,14 +172,21 @@
         </tfoot>
         <tbody>
           {% for entry in contents if entry.type == 'dir' %}
-          <tr>
-              <td class="text-xs-left " data-sort-value="dir-{{entry.name | lower}}"><i class="fa fa-fw fa-folder " aria-hidden="true"></i>&nbsp;<a href="{{entry.name}}/" ><strong>{{entry.name}}</strong></a>
+          <tr {% if entry.name.lower() in reportfolders %} class="la-rpt-row" {% endif %}>
+              <td class="text-xs-left" data-sort-value="dir-{{entry.name | lower}}"><i class="fa fa-fw fa-folder " aria-hidden="true"></i>&nbsp;<a href="{{entry.name}}/" ><strong>{{entry.name}}</strong></a>
               </td>
             <td class="text-xs-right " data-sort-value="-1">&mdash;</td>
             <td class="text-xs-right " data-sort-value="{{entry.mtime}}" title="{{entry.mtime | time_fmt}}">{{entry.mtime | humanize}}</td>
             <td class="text-xs-right " title="Action/Status">
                {% if entry.name.lower() in xrslogfolders %}
-               <button type="button" id="analyze-btn" class="btn" url="{{url_for('path_view', p=entry.fullname)}}">Analyze</button>
+                <button type="button" id="analyze-btn" {% if entry.progress >=-10 and entry.progress <=-1 %} class="btn la-failed"
+                {% elif entry.progress == 101 %} class="btn la-success" {% else %} class="btn" {% endif %}
+                 logdir="{{url_for('path_view', p=entry.fullname)[1:]}}"
+                {% if entry.progress >= 0 and entry.progress <= 100 %} style="display: none" {% endif %} >Analyze </button>
+                <button type="button" id="waiting-btn" class="btn" logdir="{{url_for('path_view', p=entry.fullname)[1:]}}"
+                {% if entry.progress != 0 %} style="display: none" {% endif %}>Waiting</button>
+                <button type="button" id="progress-btn" class="btn la-processing" logdir="{{url_for('path_view', p=entry.fullname)[1:]}}"
+                {% if entry.progress < 1 or  entry.progress > 100 %} style="display: none" {% endif %}>{{entry.process}}/100 <i class="fa fa-spinner fa-spin"></i></button>
                {% endif %}
             </td>
           </tr>
