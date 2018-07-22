@@ -179,14 +179,14 @@
             <td class="text-xs-right " data-sort-value="{{entry.mtime}}" title="{{entry.mtime | time_fmt}}">{{entry.mtime | humanize}}</td>
             <td class="text-xs-right " title="Action/Status">
                {% if entry.name.lower() in xrslogfolders %}
-                <button type="button" id="analyze-btn" {% if entry.progress >=-10 and entry.progress <=-1 %} class="btn la-failed"
-                {% elif entry.progress == 101 %} class="btn la-success" {% else %} class="btn" {% endif %}
+                <button type="button" id="analyze-btn" {% if entry.stat >=-10 and entry.stat <=-1 %} class="btn la-failed"
+                {% elif entry.stat == 101 %} class="btn la-success" {% else %} class="btn" {% endif %}
                  logdir="{{url_for('path_view', p=entry.fullname)[1:]}}"
-                {% if entry.progress >= 0 and entry.progress <= 100 %} style="display: none" {% endif %} >Analyze </button>
+                {% if entry.stat >= 0 and entry.stat <= 100 %} style="display: none" {% endif %} >Analyze </button>
                 <button type="button" id="waiting-btn" class="btn" logdir="{{url_for('path_view', p=entry.fullname)[1:]}}"
-                {% if entry.progress != 0 %} style="display: none" {% endif %}>Waiting</button>
+                {% if entry.stat != 0 %} style="display: none" {% endif %}>Waiting...</button>
                 <button type="button" id="progress-btn" class="btn la-processing" logdir="{{url_for('path_view', p=entry.fullname)[1:]}}"
-                {% if entry.progress < 1 or  entry.progress > 100 %} style="display: none" {% endif %}>{{entry.process}}/100 <i class="fa fa-spinner fa-spin"></i></button>
+                {% if entry.stat < 1 or  entry.stat > 100 %} style="display: none" {% endif %}>{{entry.stat}}/100 <i class="fa fa-spinner fa-spin"></i></button>
                {% endif %}
             </td>
           </tr>

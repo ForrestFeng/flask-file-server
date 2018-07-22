@@ -9,8 +9,10 @@ import stat
 import json
 import mimetypes
 import pathlib
+import simpleflock
+logger = None
 
-DEBUG = True
+DEBUG = False
 app = Flask(__name__, static_url_path='/assets', static_folder='assets')
 root = os.path.join(os.path.expanduser('~'), 'Logs')
 # Used to indentify folders that contain trace reports file.
@@ -136,19 +138,18 @@ class PathView(MethodView):
                 info['size'] = sz
                 total['size'] += sz
                 # include .stat value
-                progress = -100
+                statvalue = -100
                 statpath = os.path.join(filepath, '.stat')
                 if filename.lower() in xrslogfolders and os.path.exists(statpath):
-                    with open(statpath) as f:
-                        progress = int(f.read())
-                info['progress'] = progress
+                    with simpleflock.SimpleFlock(statpath+'.lock', timeout = 3):                    
+                        with open(statpath, 'rt') as f:
+                            try:
+                                statvalue = int(f.read())
+                            except Exception as e:
+                                # reset
+                                os.remove(statpath)
+                info['stat'] = statvalue
                 
-                # include button status
-                # info['status'] = 'HideAnalyze' # progress >= 0 && progress <= 100
-                # if progress != 0 :
-                #     info['status'] = 'HideWaiting'
-                # if progress < 1 or  entry.progress > 100:
-                #     info['status'] = 'HideProgress'
                 contents.append(info)
             page = render_template('index.html', path=p, contents=contents, total=total, 
                 DEBUG=DEBUG,
@@ -233,7 +234,7 @@ def stat_request_event(message):
 @socketio.on('analyze_request_event', namespace=namespace)
 def analyze_request_event(message):
     # logic to check the requested logdir stat
-    logging.info("Web server analyze_request_event  %s" % message)
+    logger.info("Web server analyze_request_event  %s" % message)
     logdir = message['logdir']
     analyze(logdir)
     #emit('stat_report_event', {'logdir':logdir, 'stat':9}, broadcast=True)
@@ -254,11 +255,14 @@ import file_monitor as FM
 job_tracker = None
 #from file_monitor import setup_logging, tracker, FakeSocketio, run_file_monitor_thread
 def run_fm():
-    FM.TEST_MODE = True    
+    FM.TEST_MODE = False    
     treaded = True
 
     loggingcfg = '/home/logadmin/flask-file-server/logging.yaml' 
-    external_process = ["python3", '/home/logadmin/flask-file-server/sim_external_script.py'] 
+    external_process = ["python3", '/home/logadmin/loganalysis/lib/v5/main.py']
+    if FM.TEST_MODE:
+        external_process = ["python3", '/home/logadmin/flask-file-server/sim_external_script.py']        
+
     #!!!  defalut_logging_rootdir MUST NOT a sub folder of log_file_rootdir
     defalut_logging_rootdir='/home/xrslog'
     log_file_rootdir='/home/xrslog/Logs'
@@ -273,9 +277,11 @@ def run_fm():
     #     os.makedirs(loggingdir)
 
     FM.setup_logging(loggingcfg, defalut_logging_rootdir=defalut_logging_rootdir)
+    global logger
+    logger = logging.getLogger('Main')
     if treaded:
-        logging.info("Run in threaded mode")
-        tracker = FM.JobTracker(socketio=socketio, #FM.FakeSocketio() if FM.TEST_MODE else socketio, 
+        logger.info("Run in threaded mode")
+        tracker = FM.JobTracker(socketio=socketio,
                           rootdir=log_file_rootdir, 
                           external_process=external_process)
         global job_tracker

@@ -14,6 +14,7 @@ import subprocess
 import ctypes
 
 TEST_MODE = False
+import simpleflock
 
 # ref https://fangpenlin.com/posts/2012/08/26/good-logging-practice-in-python/
 def setup_logging(
@@ -116,21 +117,25 @@ class WorkerRunnerThread():
 
     def run(self):       
         ARGS = [self.statpath]
+        logging.info('popen_and_call with %s' % str(self.EXTERNAL_PROCESS + ARGS)) 
         self.popen_and_call(self.on_external_process_exit(),  self.EXTERNAL_PROCESS + ARGS)
 
 class JobTracker():
     MAX_JOB_PROCESS = 2
+    logger = logging.getLogger(__name__)
     def __init__(self, socketio=None, rootdir=None, external_process=None):
         self.jobentry_dict = {}
         self.socketio = socketio
         self.rootdir = rootdir
         self.external_process = external_process
         self.run_schedule_thread()
+        
 
     def set_stat(self, statpath, value:int):
-        with open(statpath, 'w') as f:
-            logging.info('Set stat %s to %d' % (statpath, value) )
-            f.write(str(value))
+        with simpleflock.SimpleFlock(statpath+'.lock', timeout = 3):        
+            with open(statpath, 'w') as f:
+                self.logger.info('Set stat %s to %d' % (statpath, value) )
+                f.write(str(value))
     def job_entry(self, logdir:str, models=['All'], queuetime='', processtime='', finishtime='', exitcode=''):
         return dict(logdir=logdir, models=models, queuetime=queuetime, processtime=processtime, finishtime=finishtime, exitcode=exitcode)
     def job_str(self, jobentry):
@@ -139,7 +144,7 @@ class JobTracker():
             je['models'], je['queuetime'], je['processtime'], je['finishtime'], je['exitcode'])   
     def finish_job(self, statpath, exitcode):
         logdir = self.as_web_logdir(statpath)  
-        logging.info('Finish job %s' % logdir)
+        self.logger.info('Finish job %s' % logdir)
         # set stat exit code
         if exitcode == 0:
             self.set_stat(statpath, 101)
@@ -176,17 +181,18 @@ class JobTracker():
         else:
             self.set_stat(os.path.join(src_path, '.stat'), -100)
     def on_stat_modified(self, statpath): 
-        svalue = None
-        with open(statpath) as f:                   
-            svalue = int(f.read().strip()) 
+        svalue = None        
+        with simpleflock.SimpleFlock(statpath+'.lock', timeout = 3):
+            with open(statpath) as f:
+                svalue = int(f.read().strip()) 
            
         logdir = self.as_web_logdir(statpath)     
-        logging.info('*** broadcasting logdir=%s | stat=%s' % (logdir, svalue))   
+        self.logger.info('*** broadcasting logdir=%s | stat=%s' % (logdir, svalue))   
         self.broadcast_stat(logdir=self.as_web_logdir(statpath), stat=svalue)
     def broadcast_stat(self, logdir, stat):
         #broadcast to all client via websocket
         broadcast = True
-        logging.info('>>> stat_report_event logdir=%s | stat=%s' % (logdir, stat)) 
+        self.logger.info('>>> stat_report_event logdir=%s | stat=%s' % (logdir, stat)) 
         self.socketio.emit('stat_report_event',  data={'logdir': logdir, 'stat':stat}, namespace='/NSloganalyze', broadcast=True)
     def on_request_file_created(self, requestpath):
         # only used for test
@@ -194,18 +200,18 @@ class JobTracker():
         svr_logdir = os.path.dirname(requestpath)
         statpath = os.path.join(svr_logdir, '.stat')
         logdir = self.as_web_logdir(statpath)
-        logging.info('User request to anylyze %s' % logdir)        
+        self.logger.info('User request to anylyze %s' % logdir)        
         self.set_stat(statpath, 0)        
         if not logdir in self.jobentry_dict:
-            logging.info('Queue job %s' % logdir)
+            self.logger.info('Queue job %s' % logdir)
             self.jobentry_dict[logdir] = self.job_entry(logdir, queuetime=str(datetime.now()))
     def on_analyze_request(self, logdir):
         svr_logdir = self.as_svr_logdir(logdir)
-        logging.info('User request to anylyze %s' % logdir)
+        self.logger.info('User request to anylyze %s' % logdir)
         statpath = os.path.join(svr_logdir, '.stat')
         self.set_stat(statpath, 0)
         if not logdir in self.jobentry_dict:
-            logging.info('Queue job %s' % logdir)
+            self.logger.info('Queue job %s' % logdir)
             self.jobentry_dict[logdir] = self.job_entry(logdir, queuetime=str(datetime.now()))
     def run_schedule_thread(self):   
         def run_in_thread(self):      
@@ -230,14 +236,14 @@ class JobTracker():
 
                 # append and start
                 j['processtime'] = str(datetime.now())               
-                logging.info("Process %s" % j['logdir'])
+                self.logger.info("Process %s" % j['logdir'])
                 # start runner process to processing
                 t = WorkerRunnerThread(statpath, self, self.external_process) # TODO set to False for product
                 t.run()
 
         thread = threading.Thread(target=run_in_thread, args=(self,))
         thread.start()
-        logging.info("Job tracker schedule thread started")
+        self.logger.info("Job tracker schedule thread started")
 
         return thread # returns immediately after the thread starts 
 
@@ -251,26 +257,29 @@ class FakeSocketio():
         logging.info( "FakeSocketio emit %s %s" % (msg, sdata) )
 
 class Watcher:
+    logger = logging.getLogger(__name__)
     def __init__(self, tracker, dir_to_watch):
         self.observer = Observer()
         self.dir_to_watch = dir_to_watch
         self.tracker = tracker
-
+        
     def run(self):
         event_handler = LogMonitorHandler(self.tracker)
         self.observer.schedule(event_handler, self.dir_to_watch, recursive=True)
         self.observer.start()
+        self.logger.info("Watch dog observer started")
         try:
             while True:
-                time.sleep(5)
+                time.sleep(1)
         except:
             self.observer.stop()
-            print("Error")
+            self.logger.error("Watcher dog error", exc_info=True)
 
         self.observer.join()
 
 
 class LogMonitorHandler(FileSystemEventHandler):
+    logger = logging.getLogger(__name__)
     def __init__(self, tracker):
         self.tracker = tracker
 
@@ -278,7 +287,7 @@ class LogMonitorHandler(FileSystemEventHandler):
         super(LogMonitorHandler, self).on_moved(event)
 
         what = 'directory' if event.is_directory else 'file'
-        logging.info("Moved %s: from %s to %s", what, event.src_path,
+        self.logger.info("Moved %s: from %s to %s", what, event.src_path,
                      event.dest_path)
         # TraceLog created
         if event.is_directory and os.path.basename(event.dest_path) in ["TraceLog"]:
@@ -288,7 +297,7 @@ class LogMonitorHandler(FileSystemEventHandler):
         super(LogMonitorHandler, self).on_created(event)
 
         what = 'directory' if event.is_directory else 'file'
-        logging.info("Created %s: %s", what, event.src_path)
+        self.logger.info("Created %s: %s", what, event.src_path)
 
         # TraceLog
         if event.is_directory and os.path.basename(event.src_path) in ["TraceLog"]:
@@ -303,13 +312,13 @@ class LogMonitorHandler(FileSystemEventHandler):
         super(LogMonitorHandler, self).on_deleted(event)
 
         what = 'directory' if event.is_directory else 'file'
-        logging.info("Deleted %s: %s", what, event.src_path)
+        self.logger.info("Deleted %s: %s", what, event.src_path)
  
     def on_modified(self, event):
         super(LogMonitorHandler, self).on_modified(event)
 
         what = 'directory' if event.is_directory else 'file'
-        logging.info("Modified %s: %s", what, event.src_path)
+        self.logger.info("Modified %s: %s", what, event.src_path)
 
         # stat
         if not event.is_directory:
@@ -317,16 +326,16 @@ class LogMonitorHandler(FileSystemEventHandler):
                 self.tracker.on_stat_modified(event.src_path)
 
 def run_file_monitor_thread(tracker, dir_to_watch):   
-
+    logger = logging.getLogger(__name__)
     def run_in_thread(tracker, dir_to_watch):      
         w = Watcher(tracker, dir_to_watch)
         w.run()
-        logging.info("File monitor thread is running...")
+        logger.info("File monitor thread is running...")
 
 
     thread = threading.Thread(target=run_in_thread, args=(tracker, dir_to_watch))
     thread.start()
-    logging.info("File monitor thread started")
+    logger.info("File monitor thread started")
 
     return thread # returns immediately after the thread starts  
 
