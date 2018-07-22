@@ -22,3 +22,7 @@
 .la-rpt-row {
 	border: solid;
 }
+
+.table-responsive {
+	overflow-x: initial;
+}

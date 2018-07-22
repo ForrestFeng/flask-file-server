@@ -287,8 +287,7 @@ class LogMonitorHandler(FileSystemEventHandler):
         super(LogMonitorHandler, self).on_moved(event)
 
         what = 'directory' if event.is_directory else 'file'
-        self.logger.info("Moved %s: from %s to %s", what, event.src_path,
-                     event.dest_path)
+        #self.logger.info("Moved %s: from %s to %s", what, event.src_path, event.dest_path)
         # TraceLog created
         if event.is_directory and os.path.basename(event.dest_path) in ["TraceLog"]:
             self.tracker.on_tracelog_created_or_moved(None, event.dest_path)
@@ -297,7 +296,7 @@ class LogMonitorHandler(FileSystemEventHandler):
         super(LogMonitorHandler, self).on_created(event)
 
         what = 'directory' if event.is_directory else 'file'
-        self.logger.info("Created %s: %s", what, event.src_path)
+        #self.logger.info("Created %s: %s", what, event.src_path)
 
         # TraceLog
         if event.is_directory and os.path.basename(event.src_path) in ["TraceLog"]:
@@ -312,13 +311,13 @@ class LogMonitorHandler(FileSystemEventHandler):
         super(LogMonitorHandler, self).on_deleted(event)
 
         what = 'directory' if event.is_directory else 'file'
-        self.logger.info("Deleted %s: %s", what, event.src_path)
+        #self.logger.info("Deleted %s: %s", what, event.src_path)
  
     def on_modified(self, event):
         super(LogMonitorHandler, self).on_modified(event)
 
         what = 'directory' if event.is_directory else 'file'
-        self.logger.info("Modified %s: %s", what, event.src_path)
+        #self.logger.info("Modified %s: %s", what, event.src_path)
 
         # stat
         if not event.is_directory:
