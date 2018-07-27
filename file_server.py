@@ -256,7 +256,7 @@ job_tracker = None
 #from file_monitor import setup_logging, tracker, FakeSocketio, run_file_monitor_thread
 def run_fm():
     FM.TEST_MODE = False    
-    treaded = True
+    threaded = True
 
     loggingcfg = '/home/logadmin/flask-file-server/logging.yaml' 
     external_process = ["python3", '/home/logadmin/loganalysis/lib/v5/main.py']
@@ -279,7 +279,7 @@ def run_fm():
     FM.setup_logging(loggingcfg, defalut_logging_rootdir=defalut_logging_rootdir)
     global logger
     logger = logging.getLogger('Main')
-    if treaded:
+    if threaded:
         logger.info("Run in threaded mode")
         tracker = FM.JobTracker(socketio=socketio,
                           rootdir=log_file_rootdir, 
@@ -297,7 +297,7 @@ if __name__ == "__main__":
     # 5000 is falsk defalut port.
     #app.run('0.0.0.0', 5000, threaded=True, debug=True) 
     run_fm()
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
 
     # run with uwsgi 
     # uwsgi requires gevent is installed. but when it is installed the 'socketio.run(app, host='0.0.0.0', port=5000, debug=True)'
