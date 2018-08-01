@@ -297,7 +297,7 @@ if __name__ == "__main__":
     # 5000 is falsk defalut port.
     #app.run('0.0.0.0', 5000, threaded=True, debug=True) 
     run_fm()
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    socketio.run(app, host='localhost', port=5000, debug=False)
 
     # run with uwsgi 
     # uwsgi requires gevent is installed. but when it is installed the 'socketio.run(app, host='0.0.0.0', port=5000, debug=True)'
